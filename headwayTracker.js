@@ -11,8 +11,6 @@ var HashTable = require('hashtable');
 
 var tripPatterns = new HashTable();
 var stopDetails = new HashTable();
-var vehiclePositions;
-var prevVehiclePositions;
 
 var conString = 'postgres://postgres:mendelssohn@localhost:5432/mbta';
 
@@ -27,7 +25,10 @@ var initializeHashTablesFromDb = function(cb) {
 		cb();
 	});
 	client.connect();
-	client.query('SELECT t.trip_id, t.route_id, st.stop_sequence, st.stop_id FROM trips t INNER JOIN routes r ON t.route_id = r.route_id INNER JOIN gtfs_stop_times_20130808_20131227 st ON st.trip_id = t.trip_id WHERE r.route_type = $1', ['3'], function(err, result) {
+	client.query('SELECT t.trip_id, t.route_id, st.stop_sequence, st.stop_id \
+								FROM trips t INNER JOIN routes r ON t.route_id = r.route_id \
+								INNER JOIN gtfs_stop_times_20130808_20131227 st ON st.trip_id = t.trip_id \
+								WHERE r.route_type = $1', ['3'], function(err, result) {
 		result.rows.forEach(function(r) {
 			if (tripPatterns.get(r.trip_id))
 			{
@@ -46,57 +47,116 @@ var initializeHashTablesFromDb = function(cb) {
 	});
 }
 
-initializeHashTablesFromDb(function() {
-	setInterval(getVehiclePositions, 10000);
-});
-
 // This section is for reading in the pb file and decoding it
 var protoStr = fs.readFileSync('gtfs-realtime.proto');
 var Message = protobuf.protoFromString(protoStr).build("transit_realtime");
+
+var vehiclePositions;
 
 var getVehiclePositions = function() {
   request({url:"http://developer.mbta.com/lib/gtrtfs/Vehicles.pb", encoding:null}, function(error, response, body) {
     if (!error && response.statusCode == 200) {
       var feedMessage =  Message.FeedMessage.decode(body);
-      prevVehiclePositions = vehiclePositions;
+      var prevVehiclePositions = vehiclePositions;
       vehiclePositions = feedMessage.entity;
-      writePositionsToDb(vehiclePositions);
+      writePositionsToDb(vehiclePositions, prevVehiclePositions);
     }
   });
 }
 
-var writePositionsToDb = function(positions) {
+var writePositionsToDb = function(positions, prevPositions) {
 	var client2 = new pg.Client(conString);
 	client2.connect();
-	var stream = client2.copyFrom('COPY gtfsrealtime (entity_id, trip_id, trip_start_date, trip_schedule_relationship, lat_e6, lon_e6, current_stop_sequence, timestamp, stop_id, trip_route_id) FROM STDIN WITH CSV');
+// 	var stream = client2.copyFrom('COPY gtfsrealtime (entity_id, trip_id, trip_start_date, \
+// 		trip_schedule_relationship, lat_e6, lon_e6, current_stop_sequence, timestamp, stop_id, \
+// 		trip_route_id) FROM STDIN WITH CSV');
+	var stream = client2.copyFrom('COPY times_at_stops (route_id, trip_id, vehicle_id, \
+		stop_id, time_at_stop) FROM STDIN WITH CSV');
 	stream.on('close', function () {
-		console.log("wrote vehicle positions to gtfsrealtime table successfully at " + (new Date()));
+		console.log("wrote vehicle positions to table successfully at " + (new Date()));
 		client2.end();
 	});
 	stream.on('error', function (error) {
-		console.log("error while inserting data into gtfsrealtime table", error);
+		console.log("error while inserting data into table", error);
 		stream.end();
 	});
+	var sameCount = 0, diffCount = 0;
 	positions.forEach(function(e) {
-		var prev = _.where(prevVehiclePositions, { id: e.id });
+		var prev = _.find(prevPositions, function(p) { return p.id === e.id });
 		if (e.vehicle && e.vehicle.trip) {
-			if (e.id === 'v0906')
-			console.log('JSON.stringify(prev) = ' + JSON.stringify(prev));
-			//if (
-			stream.write(getPositionCsvString(e));
+			if (prev && e.id === prev.id && e.vehicle.position.latitude === prev.vehicle.position.latitude && e.vehicle.position.longitude === prev.vehicle.position.longitude) {
+				sameCount++;
+			} else {
+				diffCount++;
+				//stream.write(getPositionCsvString(e));
+				if (prev && prev.vehicle.current_stop_sequence !== e.vehicle.current_stop_sequence) {
+					console.log('diff stop sequence for id ' + e.id);
+					stream.write(getPredictionCsvString(e, prev));
+				}
+			}
 		}
 	});
+	console.log('sameCount = ' + sameCount + ', diffCount = ' + diffCount);
 	stream.end();
 }
 
 var getPositionCsvString = function(e) {
-	var currentStopId = _.where(tripPatterns.get(e.vehicle.trip.trip_id).stop_pattern, { stop_sequence: e.vehicle.current_stop_sequence })[0].stop_id;
+	var currentTripPattern = tripPatterns.get(e.vehicle.trip.trip_id);
+	if (!currentTripPattern) {
+		console.log('no trip found for trip_id ' + e.vehicle.trip.trip_id);
+		return '';
+	}
+	var currentStop = _.where(currentTripPattern.stop_pattern, { stop_sequence: e.vehicle.current_stop_sequence });
+	if (currentStop.length === 0) {
+		console.log('no stop found for trip ' + e.vehicle.trip.trip_id + ', stop_sequence ' + e.vehicle.current_stop_sequence);
+		return '';
+	}
+	var currentStopId = currentStop[0].stop_id;
+	
 	var currentRouteId = tripPatterns.get(e.vehicle.trip.trip_id).route_id;
 	var csvString = e.id + ',' + e.vehicle.trip.trip_id + ',' + e.vehicle.trip.start_date + ',' + e.vehicle.trip.schedule_relationship
 		+ ',' + Math.round(e.vehicle.position.latitude * 1000000) +',' + Math.round(e.vehicle.position.longitude * 1000000) + ',' 
 		+ e.vehicle.current_stop_sequence + ',' + e.vehicle.timestamp + ',' + currentStopId + ',' + currentRouteId +'\n';
+	
 	return csvString;
 }
+
+var getPredictionCsvString = function(e, prev) {
+	var prevTripPattern = tripPatterns.get(prev.vehicle.trip.trip_id);
+	if (!prevTripPattern) {
+		console.log('no trip found for trip_id ' + prev.vehicle.trip.trip_id);
+		return '';
+	}
+	var prevStop = _.where(prevTripPattern.stop_pattern, { stop_sequence: prev.vehicle.current_stop_sequence });
+	if (prevStop.length === 0) {
+		console.log('no stop found for trip ' + prev.vehicle.trip.trip_id + ', stop_sequence ' + prev.vehicle.current_stop_sequence);
+		return '';
+	}
+	var prevStopId = prevStop[0].stop_id;
+	var prevStopLat = stopDetails.get(prevStop[0].stop_id).stop_lat, prevStopLon = stopDetails.get(prevStop[0].stop_id).stop_lon;
+	var currentRouteId = tripPatterns.get(e.vehicle.trip.trip_id).route_id;
+	var prevLat = prev.vehicle.position.latitude, prevLon = prev.vehicle.position.longitude,
+		curLat = e.vehicle.position.latitude, curLon = e.vehicle.position.longitude;
+	var distPct = getDistance(prevLat, prevLon, prevStopLat, prevStopLon) / (getDistance(prevLat, prevLon, prevStopLat, prevStopLon) + getDistance(prevStopLat, prevStopLon, curLat, curLon))
+	console.log('prevLat = ' + prevLat + ', ' + 'prevLon = ' + prevLon + ', '
+		+ 'curLat = ' + curLat + ', ' + 'curLon = ' + curLon + ', ' + 'prevLat = ' + prevLat + ', ' + 
+		'prevStopLat = ' + prevStopLat + ', ' + 'prevStopLon = ' + prevStopLon);
+	console.log('distPct = ' + distPct);
+	var timeAtStop = Math.round(prev.vehicle.timestamp + distPct * (e.vehicle.timestamp - prev.vehicle.timestamp));
+	
+	var csvString = currentRouteId + ',' + e.vehicle.trip.trip_id + ',' + e.id + ',' + prevStopId
+		+ ',' + timeAtStop + '\n';
+	
+	return csvString;
+}
+
+var getDistance = function(lat1, lon1, lat2, lon2) {
+	return Math.sqrt(Math.pow(lat1 - lat2, 2) + Math.pow(lon1 - lon2, 2));
+}
+
+initializeHashTablesFromDb(function() {
+	setInterval(getVehiclePositions, 10000);
+});
 
 // Serve index.html on port 8080
 // var index = fs.readFileSync('index.html');
