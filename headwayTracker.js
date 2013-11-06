@@ -17,7 +17,7 @@ var busPositions = new HashTable();
 var busPositionKeys = []; // need to store keys because HashTable doesn't let you iterate through them
 var timesAtStopsByStop = new HashTable();
 
-var routeIdsToGet = ['01', '701', '114', '116', '117'];
+var routeIdsToGet = ['01', '701', '114', '116', '117', '15', '22', '23', '28', '32', '39', '57', '66', '71', '73', '77', '111'];
 
 var conString = 'postgres://postgres:mendelssohn@localhost:5432/mbta';
 
@@ -130,13 +130,11 @@ var writePositionsToDb = function() {
           var currentStop = timesAtStopsByStop.get(stopId);
           if (!currentStop) {
             timesAtStopsByStop.put(stopId, {most_recent_update: new Date(), stop_time_det: [timeAtStopObj]});
-            console.log('JSON.stringify(timeAtStopObj) = ' + JSON.stringify(timeAtStopObj));
             stream.write(timeAtStopObj.route_id + ',' + timeAtStopObj.trip_id + ',' + timeAtStopObj.entity_id + ',' + stopId + ',' + timeAtStopObj.time_at_stop + '\n');
           } else {
-            if (!_.isEqual(currentStop.stop_time_det[currentStop.stop_time_det.length - 1], timeAtStopObj)) {
+            if (!_.find(currentStop.stop_time_det, function(st) { return st.entity_id == timeAtStopObj.entity_id && st.time_at_stop == timeAtStopObj.time_at_stop; })) {
               currentStop.most_recent_update = new Date();
-              currentStop.stop_time_det.push(timeAtStopObj);
-              console.log('JSON.stringify(timeAtStopObj) = ' + JSON.stringify(timeAtStopObj));
+              insertIntoStopTimes(timeAtStopObj, currentStop.stop_time_det);
               stream.write(timeAtStopObj.route_id + ',' + timeAtStopObj.trip_id + ',' + timeAtStopObj.entity_id + ',' + stopId + ',' + timeAtStopObj.time_at_stop + '\n');
             }
           }
@@ -147,6 +145,22 @@ var writePositionsToDb = function() {
   });
   console.log('updated at ' + (new Date()));
   stream.end();
+}
+
+// Insert into stop times in order by stop time (may be out of order if buses are close together)
+var insertIntoStopTimes = function(timeAtStopObj, stopTimeDet) {
+  console.log('insertIntoStopTimes, timeAtStopObj = ' + JSON.stringify(timeAtStopObj) + ', stopTimeDet = ' + JSON.stringify(stopTimeDet));
+  for (var i = stopTimeDet.length; i >= 1; i--) {
+    if (stopTimeDet[i - 1].time_at_stop < timeAtStopObj.time_at_stop) {
+      console.log('inserting at i = ' + i);
+      stopTimeDet.splice(i, 0, timeAtStopObj);
+      console.log('now stopTimeDet = ' + JSON.stringify(stopTimeDet));
+      return;
+    }
+  }
+  console.log('not found, unshifting');
+  stopTimeDet.unshift(timeAtStopObj);
+  console.log('now stopTimeDet = ' + JSON.stringify(stopTimeDet));
 }
 
 var getTimeAtStopObj = function(entityId, pos, stopId, routeId) {
@@ -203,18 +217,35 @@ initializeHashTablesFromDb(function() {
   });
 });
 
-//var index = fs.readFileSync('index.html');
-
 var server = http.createServer(function (request, response) {
-  var stopId = url.parse(request.url, true).query.stopId;
-  console.log('got a request w stopId = ' + stopId);
-  response.writeHead(200, {"Content-Type": "application/json"});
-  if (timesAtStopsByStop.get(stopId)) {
-    response.write(JSON.stringify(timesAtStopsByStop.get(stopId)));
+  if (!_.isEmpty(url.parse(request.url, true).query)) {
+    var stopId = url.parse(request.url, true).query.stopId;
+    console.log('got a request w query = ' + JSON.stringify(url.parse(request.url, true).query) + ', stopId = ' + stopId);
+    response.writeHead(200, {"Content-Type": "application/json"});
+if (timesAtStopsByStop.get(stopId)) {
+      console.log('timesAtStopsByStop.get(stopId) = ' + JSON.stringify(timesAtStopsByStop.get(stopId)));
+      response.write(JSON.stringify(timesAtStopsByStop.get(stopId)));
+    } else {
+      response.write(JSON.stringify({}));
+    }
+    // var currentStop = {
+//       most_recent_update: new Date(),
+//       stop_time_det:
+//       [
+//       {route_id: '01', trip_id: '12345', entity_id: 'v123', time_at_stop: 1383525903},
+//       {route_id: '01', trip_id: '12345', entity_id: 'v234', time_at_stop: 1383526520},
+//       {route_id: '01', trip_id: '12345', entity_id: 'v345', time_at_stop: 1383527601},
+//       {route_id: '01', trip_id: '12345', entity_id: 'v345', time_at_stop: 1383527888}
+//       ]
+//       }
+//     response.write(JSON.stringify(currentStop));
+    response.end();
   } else {
-    response.write('');
+    var index = fs.readFileSync('index.html');
+    response.writeHead(200, {"Content-Type": "text/html"});
+    response.write(index);
+    response.end();
   }
-  response.end();
 }).listen(8080);
 
 // var getTripDetails = function(tripId) {
