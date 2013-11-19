@@ -1,0 +1,31 @@
+{
+  "name": "headwaytracker",
+  "version": "0.0.0",
+  "description": "Basic web app that displays recent headway info",
+  "main": "headwayTracker.js",
+  "dependencies": {
+    "request": "~2.27.0",
+    "pg": "~2.8.2",
+    "protobufjs": "~1.1.9",
+    "hashtable": "~0.1.4",
+    "underscore": "~1.5.2"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dmaltzan/headwaytracker.git"
+  },
+  "keywords": [
+    "transit",
+    "bus",
+    "headway"
+  ],
+  "author": "David Maltzan",
+  "license": "BSD",
+  "bugs": {
+    "url": "https://github.com/dmaltzan/headwaytracker/issues"
+  }
+}
