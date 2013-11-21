@@ -1,0 +1,82 @@
+<html>
+  <head>
+    <title>
+      Headway Tracker
+    </title>
+    <script type="text/javascript" src="https://www.google.com/jsapi"></script>
+    <script type="text/javascript" src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+    <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/underscore.js/1.5.2/underscore-min.js"></script>
+    <link rel="stylesheet" href="mainStyle.css" media="screen" type="text/css"></link>
+  </head>
+  <body>
+    <div class="grid">
+    	<h2>1/CT1 Corridor (Direction: Dudley)</h2>
+    	<div class="col-1-2">
+    		<h2></h2>
+    		<div id="myChart0" class="chart" data-stop-id="72" data-stop-name="Pearl St @ Mass Ave"></div>
+				<div id="myChart1" class="chart" data-stop-id="75" data-stop-name="84 Mass Ave"></div>
+				<div id="myChart2" class="chart" data-stop-id="79" data-stop-name="Newbury St"></div>
+			</div>
+			<div class="col-1-2">
+				<h2></h2>
+
+				<div id="myChart3" class="chart" data-stop-id="187" data-stop-name="Mass Ave Orange Line"></div>
+				<div id="myChart4" class="chart" data-stop-id="59" data-stop-name="Mass Ave @ Washington St"></div>
+				<div id="myChart5" class="chart" data-stop-id="62" data-stop-name="Washington St @ Williams St"></div>
+<!-- 
+				<div id="myChart4" class="chart" data-stop-id="5714" data-stop-name="Broadway @ Yeamans St"></div>
+				<div id="myChart5" class="chart" data-stop-id="5721" data-stop-name="Broadway @ Green St"></div>
+				<div id="myChart6" class="chart" data-stop-id="5728" data-stop-name="Pearl St opp Essex St"></div>
+				<div id="myChart7" class="chart" data-stop-id="5733" data-stop-name="Meridian St @ Eutaw St"></div>
+ -->
+			</div>
+		</div>
+    <script>
+		google.load("visualization", "1", {packages:["corechart"]});
+		google.setOnLoadCallback(function() {
+	
+			var charts = [];
+			for (i = 0; i < 6; i++) {
+				charts[i] = {stop_id: $("#myChart" + i).data("stopId")
+					,chart: new google.visualization.LineChart($("#myChart" + i)[0])
+					,stop_name: $("#myChart" + i).data("stopName")};
+			}
+		
+			function setIntervalAndExecute(fn, t) {
+				fn();
+				return(setInterval(fn, t));
+			}
+			
+			var timerId = setIntervalAndExecute(function() {
+				charts.forEach(function(c) {
+					var chartData = new google.visualization.DataTable();
+					chartData.addColumn('datetime', 'Time');
+					chartData.addColumn('number', 'Leading Headway (min)');
+					$.getJSON('/stopId/' + c.stop_id).done(function(currentStop) {
+						var timesAtStops = _.pluck(currentStop.stop_time_det, 'time_at_stop');
+						if (timesAtStops.length < 2) return;
+						for (var i = 0; i < timesAtStops.length - 1; i++) {
+							var timeAtStop = new Date(1000 * timesAtStops[i + 1]);
+							if (timeAtStop >= new Date() - 5400000) {
+								chartData.addRow([timeAtStop, (timesAtStops[i + 1] - timesAtStops[i]) / 60]);
+							}
+						}
+						var options = {
+							fontSize: 18,
+							title: c.stop_name,
+							vAxis: {minValue: 0, maxValue: chartData.getColumnRange(1).max, title: 'Leading Headway', textStyle: {color: 'black', fontName: 'Arial', fontSize: 14}},
+							hAxis: {minValue: new Date(new Date() - 5400000), maxValue: new Date(), textStyle: {color: 'black', fontName: 'Arial', fontSize: 15}},
+							legend: {position: 'none'}
+						};
+						c.chart.draw(chartData,options);		
+					});
+				});
+				
+				for (var i = 0; i < charts.length; i++) {
+					
+				}
+			}, 15000);
+		});
+    </script>
+  </body>
+</html>

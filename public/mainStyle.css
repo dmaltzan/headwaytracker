@@ -1,0 +1,26 @@
+[class*='col-'] {
+  float: left;
+}
+.col-1-2 {
+  width: 50%;
+}
+.chart {
+  width: 600px;
+  height: 200px;
+}
+.grid:after {
+  content: "";
+  display: table;
+  clear: both;
+}
+*, *:after, *:before {
+  -webkit-box-sizing: border-box;
+  -moz-box-sizing: border-box;
+  box-sizing: border-box;
+}
+[class*='col-'] {
+  padding-right: 20px;
+}
+[class*='col-']:last-of-type {
+  padding-right: 0;
+}
