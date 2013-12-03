@@ -14,13 +14,13 @@ var tripPatterns = require('./models/tripPatterns');
 var stopDetails = require('./models/stopDetails');
 var busPositions = require('./models/busPositions');
 var timesAtStops = require('./models/timesAtStops');
-var timesAtStopsByStop = new HashTable();
 
 var conString = 'postgres://postgres:mendelssohn@localhost:5432/mbta';
 var routeIdsToGet = ['01', '701', '114', '116', '117', '15', '22', '23', '28', '32', '39', '57', '66', '71', '73', '77', '111'];
 
 // Initialize tables with GTFS data
 var initializeHashTablesFromDb = function(cb) {
+  //tripPatterns.writeTripPatternsToTxt(function() {});
   tripPatterns.initialize(function() { stopDetails.initialize(cb, routeIdsToGet) });
 }
 
@@ -65,10 +65,6 @@ var writePositionsToDb = function() {
     if (pos.length > 2 && pos[lastInd].stop_seq !== pos[lastInd - 1].stop_seq) {
       for (var seq = pos[lastInd - 1].stop_seq; seq <= pos[lastInd].stop_seq; seq++) {
         var currentStopInfo = tripPatterns.getStop(pos[0].trip_id, seq);
-        // Don't allow terminals
-        if (!currentStopInfo || currentStopInfo.isTerminal) {
-          continue;
-        }
         
         timesAtStops.handleNewPos(k, pos, stopDetails.get(currentStopInfo.stopId), currentStopInfo, stream);
       }
@@ -99,6 +95,6 @@ var app = express();
 app.listen(8080);
 app.use(express.static('public'));
 app.get('/stopId/:stopId', function(req, res) {
-  res.json(timesAtStopsByStop.get(req.params.stopId));
+  res.json(timesAtStops.get(req.params.stopId));
 });
 

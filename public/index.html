@@ -55,6 +55,7 @@
 					$.getJSON('/stopId/' + c.stop_id).done(function(currentStop) {
 						var timesAtStops = _.pluck(currentStop.stop_time_det, 'time_at_stop');
 						if (timesAtStops.length < 2) return;
+						console.log('timesAtStops.length = ' + timesAtStops.length);
 						for (var i = 0; i < timesAtStops.length - 1; i++) {
 							var timeAtStop = new Date(1000 * timesAtStops[i + 1]);
 							if (timeAtStop >= new Date() - 5400000) {

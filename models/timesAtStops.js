@@ -67,6 +67,10 @@ module.exports = {
         stream.write(timeAtStopObj.route_id + ',' + timeAtStopObj.trip_id + ',' + timeAtStopObj.entity_id + ',' + currentStopInfo.stopId + ',' + timeAtStopObj.time_at_stop + '\n');
       }
     }
+  },
+  
+  get: function(stopId) {
+    return timesAtStopsByStop.get(stopId);
   }
 
 }

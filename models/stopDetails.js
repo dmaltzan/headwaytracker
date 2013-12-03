@@ -26,6 +26,7 @@ module.exports = {
 //   },
   
   initialize: function(cb, routeIds) {
+    console.log("initializin' stop details");
     var stopsByRouteUrl = 'http://realtime.mbta.com/developer/api/v1/stopsbyroute';
     var apiKey = 'wmgMhi30P0Os2HJ4Md8Csw';
     routeIds.forEach(function(routeId) {
